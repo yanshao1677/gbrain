@@ -2,6 +2,17 @@
 
 All notable changes to GBrain will be documented in this file.
 
+## [0.42.19.0] - 2026-06-02
+
+**`gbrain skillopt --write-capture` rollouts now get full tool schemas, closing the last gap in the AI SDK v6 tool-loop fix.** The v6 fix that got agent loops working again on non-Anthropic providers (DeepSeek, Qwen, Groq, local models) shipped in v0.42.11.0 — but it fixed only one of the two places skillopt builds tool definitions. The `--write-capture` path (the virtual put_page/submit_job/file_upload registry the optimizer uses to test write-flavored skills) still handed the model a stripped-down schema with `enum`, `default`, and `items` dropped, so the optimizer couldn't see a tool's allowed values and proposed invalid calls. Both builders now use the same shared mapper.
+
+### What changed
+
+- **SkillOpt write-capture schema fidelity** (`src/core/skillopt/write-capture.ts`): the virtual-write tool builder now uses the shared `paramDefToSchema` mapper, matching the `rollout.ts` builder fixed in v0.42.11.0. `enum`/`default`/`items` survive into the schema the model sees.
+- **Regression hardening for the v6 fix** (`test/ai/gateway-tools-schema.test.ts`): a real-AI-SDK integration test (`generateText` + `MockLanguageModelV3`, no network) pins that the tool schema + tool-result message shapes the gateway produces are accepted by AI SDK v6 — with guards that the pre-fix bare-`{jsonSchema}` object AND the raw-tool-result-in-a-user-message shape both throw. The kind of test the original fix lacked, so the convergent v6 fix can't silently regress.
+- **SkillOpt schema-metadata test** (`test/skillopt/rollout-schema.test.ts`): asserts `enum` survives in BOTH the rollout and write-capture tool builders.
+
+Closes the remaining surface of #1782 / #1764. The core fix was a convergent effort — credit michaeladair44, justemu, and JE4NVRG for the original diagnoses and patches.
 ## [0.42.18.0] - 2026-06-03
 
 **A scheduled `gbrain sync` can no longer spin forever and pile up dead processes, and `gbrain doctor` stops showing "100% of pages need link extraction" right after you ran the thing that's supposed to fix it.**

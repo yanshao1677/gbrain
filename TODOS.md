@@ -1,5 +1,40 @@
 # TODOS
 
+## v0.42.x AI SDK v6 tool-schema fix follow-ups (#1782/#1764)
+
+Surfaced by the codex outside-voice pass during `/plan-eng-review` and
+deliberately scoped OUT of the tool-schema fix (it's pre-existing + a separate
+structural change). Plan + GSTACK REVIEW REPORT at
+`~/.claude/plans/system-instruction-you-are-working-abstract-willow.md`.
+
+- [ ] **P1 — Gateway toolLoop crash-replay sends a malformed ModelMessage
+  history.** The gateway path never persists the tool-result feedback message:
+  `toolLoop` pushes `{role:'user', content: toolResultBlocks}` with `void
+  messageIdx` and NO persistence callback, so only assistant turns reach
+  `subagent_messages` (via `onAssistantTurn`). On any multi-turn resume,
+  `loadPriorMessages` (`subagent.ts:769`) returns
+  `[user, assistant(tool-call), assistant(...), ...]` with the tool-result
+  messages MISSING — a history the real AI SDK v6 rejects ("tool result missing
+  for tool call"). The direct-Anthropic path reconciles this at
+  `subagent.ts:334-418` (synthesize + persist the tool-result turn before the
+  first chat call); the gateway branch does not. **Fresh runs — the actual
+  #1782/#1764 reports — are unaffected**, which is why the tool-schema fix
+  shipped without it. Two fix options: (a) add an `onToolResults` persistence
+  callback to `toolLoop` so the feedback message lands in `subagent_messages`,
+  or (b) mirror the direct-path reconciliation in the gateway branch of
+  `subagent.ts` before the first `gatewayToolLoop` chat. Either is a structural
+  change to the replay contract — own PR, own review. Caught because every
+  toolLoop/replay test stubs the transport and never inspects the input
+  messages; pair the fix with a `MockLanguageModelV3 + generateText` replay test
+  (the seam landed in `test/ai/gateway-tools-schema.test.ts`).
+
+- [ ] **P2 — SkillOpt `best.md` not written in `--no-mutate` runs.** From PR
+  #1708 (scoped out of the tool-schema wave as tangential): in `--no-mutate`
+  SkillOpt runs the accepted proposal isn't persisted because `acceptCandidate`
+  is gated by the mutate decision. Write it explicitly via `atomicWrite`
+  (`apply-edits.ts:311`) + `mkdirSync(recursive)` in
+  `runOptimizationLoop` (`src/core/skillopt/orchestrator.ts`). Small, own PR.
+
 ## v0.42.12.0 #1685 brain-health-as-solved follow-ups (v0.42+)
 
 Deferred from the v0.42.12.0 wave (issue #1685, the posture umbrella over #1678/#1735).
