@@ -38,11 +38,13 @@ source_paths:
 ## 判定规则
 
 1. 初始化字符串数组 `parts`，**第一项固定** `v=${KNOBS_HASH_VERSION}`（当前值 **11**）
-2. 按**固定顺序** append 所有影响结果集的 knob 键值（mode、limit、expansion、tokenBudget、reranker_*、graph_signals、relationalRetrieval、autocut、embedding 相关、schema pack 等——完整列表见源码 `knobsHash` 函数体）
-3. `embeddingColumn` 缺省 → 字面量 `'embedding'`
-4. `embeddingModel` 缺省 → `'default'`
-5. `schemaPack` 缺省 → `'none'`；version 缺省 → `'0'`
-6. `hash = SHA256(parts.join('|'))` hex digest
+2. 按**固定顺序** append 所有影响结果集的 knob 键值。源码实际顺序（mode.ts `knobsHash` 函数体）：
+   `v / mode / cache / sim / ttl / iw / tb / exp / lim / rr / rrm / rri / rro / rrt / fr / cmbt / cmbi / iqt / iqi / um / umo / lli / col / prov / gs / pack / pver / cr / crd / tib / ac / acj / rel / reld`
+   - 注意 parts 里的**键名缩写**：embedding 列是 `col=`（非 `embCol=`）、provider:model 是 `prov=`（非 `embModel=`）；schema pack 拆成 `pack=` 和 `pver=` 两个独立 part，**不是** `pack@ver` 拼接
+3. `ctx.embeddingColumn` 缺省 → 字面量 `'embedding'`
+4. `ctx.embeddingModel` 缺省 → `'default'`
+5. `ctx.schemaPack` 缺省 → `'none'`；`schemaPackVersion` 缺省 → `'none'`（注意：不是 `'0'`）
+6. `hash = SHA256(parts.join('|'))` 的 hex digest，再 **`.slice(0, 16)`** 截断为 16 位
 7. **纪律**：新增 knob 到 parts → **必须** `KNOBS_HASH_VERSION += 1`，否则 persisted cache 跨语义 serve
 
 ## 状态读写位置
@@ -88,18 +90,32 @@ export function knobsHash(
   knobs: ResolvedSearchKnobs,
   ctx?: KnobsHashContext,
 ): string {
+  // 固定顺序、append-only。新增字段必须 bump KNOBS_HASH_VERSION。
   const parts = [
     `v=${KNOBS_HASH_VERSION}`,
     `mode=${knobs.resolved_mode}`,
-    `limit=${knobs.searchLimit}`,
-    `expansion=${knobs.expansion}`,
-    `tokenBudget=${knobs.tokenBudget ?? 'off'}`,
-    // ... remaining fixed-order fields from source
-    `embCol=${ctx?.embeddingColumn ?? 'embedding'}`,
-    `embModel=${ctx?.embeddingModel ?? 'default'}`,
-    `pack=${ctx?.schemaPack ?? 'none'}@${ctx?.schemaPackVersion ?? '0'}`,
+    `cache=${knobs.cache_enabled ? 1 : 0}`,
+    `sim=${knobs.cache_similarity_threshold.toFixed(4)}`,
+    `ttl=${knobs.cache_ttl_seconds}`,
+    `iw=${knobs.intentWeighting ? 1 : 0}`,
+    `tb=${knobs.tokenBudget ?? 'none'}`,
+    `exp=${knobs.expansion ? 1 : 0}`,
+    `lim=${knobs.searchLimit}`,
+    `rr=${knobs.reranker_enabled ? 1 : 0}`,
+    // rrm / rri / rro / rrt —— reranker 配置
+    `fr=${knobs.floor_ratio === undefined ? 'none' : knobs.floor_ratio.toFixed(4)}`,
+    // cmbt / cmbi / iqt / iqi / um / umo / lli —— cross-modal
+    `col=${ctx?.embeddingColumn ?? 'embedding'}`,      // 键名 col，非 embCol
+    `prov=${ctx?.embeddingModel ?? 'default'}`,         // 键名 prov，非 embModel
+    `gs=${knobs.graph_signals ? 1 : 0}`,
+    `pack=${ctx?.schemaPack ?? 'none'}`,                // pack 与 pver 独立，非 pack@ver
+    `pver=${ctx?.schemaPackVersion ?? 'none'}`,
+    // cr / crd / tib / ac / acj —— contextual / title-boost / autocut
+    `rel=${knobs.relationalRetrieval ? 1 : 0}`,
+    `reld=${knobs.relational_retrieval_depth ?? 2}`,
   ];
-  return createHash('sha256').update(parts.join('|')).digest('hex');
+  // 关键：返回 16 位 hex 截断，非完整 64 位
+  return createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 16);
 }
 ```
 

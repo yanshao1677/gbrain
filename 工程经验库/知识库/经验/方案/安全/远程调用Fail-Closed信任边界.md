@@ -15,6 +15,7 @@ related:
   - ../../架构/用统一操作契约为CLI与Agent工具提供单一真相源.md
   - ../../架构/用正交双轴模型分离数据库与内容仓库路由.md
   - 阶段1-读侧数据源作用域解析.md
+  - 阶段2-protected-job-name的trust判别用remote而非scope.md
 source_repo: garrytan/gbrain
 source_commit:
 source_paths:
@@ -67,10 +68,10 @@ Subagent tool      true              + slug prefix / namespace rules
 3. HTTP：工具列表 `operations.filter(op => !op.localOnly)`
 4. HTTP CallTool：`requiredScope = op.scope || 'read'` → `hasScope(auth.scopes, requiredScope)`，失败返回 `insufficient_scope`
 5. Handler 内：
-   - 读路径：`sourceScopeOpts(ctx)` / `resolveRequestedSourceScope(ctx, params)`
+   - 读路径：`sourceScopeOpts(ctx)` / `resolveRequestedScope(ctx, params)`
    - 敏感 markdown：`ctx.remote === true` → strip private fences
    - 文件上传：remote → strict path confine；local → loose
-6. Per-call search mode：remote 未知 mode → reject；local 未知 → loud reject（防 silent downgrade）
+6. Per-call search mode override（`resolvePerCallMode`）：**仅 trusted local 可选 mode**；remote 传 mode → **静默忽略**（`return undefined`，回退 server-configured mode，不报错）；local 传未知 mode → loud reject（throw `OperationError invalid_params`，防 silent downgrade）
 
 ## 6. 异常处理
 
@@ -146,10 +147,10 @@ security, fail-closed, mcp, trust-boundary, multi-tenant
 
 | 项 | 位置 |
 |----|------|
-| remote REQUIRED + fail-closed 语义 | `src/core/operations.ts:288-300` |
+| remote REQUIRED + fail-closed 语义 | `src/core/operations.ts:288-301`（注释 :288-300，`remote: boolean` 字段 :301） |
 | buildOperationContext 默认 remote=true | `src/mcp/dispatch.ts:205` |
 | MCP stdio remote=true + takes 默认 world | `src/mcp/server.ts:43-45` |
 | HTTP localOnly 过滤 | `src/commands/serve-http.ts:1449` |
 | HTTP hasScope  enforcement | `src/commands/serve-http.ts:1550-1551` |
 | summarizeMcpParams redaction | `src/mcp/dispatch.ts:75-99` |
-| resolvePerCallMode remote 分支 | `src/core/operations.ts:538-543` 注释 |
+| resolvePerCallMode（remote 静默忽略，local loud reject） | `src/core/operations.ts:536-549`（注释 :536-542，函数 :543，remote 分支 :545） |
